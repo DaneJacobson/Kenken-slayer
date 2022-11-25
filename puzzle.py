@@ -3,6 +3,7 @@ import functools
 import itertools
 import random
 
+import numpy as np
 import pandas as pd
 
 CAGE_SIZES = [1, 2, 2, 2, 2, 2, 3, 3, 4, 4] #TODO: non-jank prob distributions, see division as well
@@ -11,21 +12,46 @@ OP2 = ['+', '*', '-', '-', '-', '-',  '-',  '-', '/', '/', '/', '/', '/', '/', '
 OP2NODIV = ['+', '*', '-']
 OPELSE = ['+', '*']
 
-class KenKenPuzzle:
+class KenKen:
 
-    def __init__(self, n):
+    def __init__(self, n, please_print: bool=False):
         self._n = n
+        self._please_print = please_print
         self._idxs = list(range(self._n))
         self._nums = list(map(lambda i: i + 1, self._idxs))
-        self._grid_rep = {}
+        self._answers = None
+        self._answers_machine = None
+        self._cages = None
+        self._operators = None
+        self._totals = None
+        self._dict_rep = {}
 
         # Generate unique KenKen puzzle
         self._attempts = 1
         while True:
-            print('Attempt: ' + str(self._attempts))
-            self.genPuzzle(please_print=True)
+            if self._please_print: print('Attempt: ' + str(self._attempts))
+            self.genPuzzle(please_print=self._please_print)
             if self.uniquePuzzle(): break
             else: self._attempts += 1
+        self.convertOps()
+        self.convertAns()
+
+    def convertOps(self):
+        new_operators = np.zeros((self._n, self._n), dtype=int)
+        for x in self._idxs:
+            for y in self._idxs:
+                if self._operators[x][y] == '#': new_operators[x][y] = 0
+                elif self._operators[x][y] == '+': new_operators[x][y] = 1
+                elif self._operators[x][y] == '*': new_operators[x][y] = 2
+                elif self._operators[x][y] == '-': new_operators[x][y] = 3
+                elif self._operators[x][y] == '/': new_operators[x][y] = 4
+        self._operators = new_operators
+
+    def convertAns(self):
+        self._answers_machine = np.copy(self._answers)
+        for x in self._idxs:
+            for y in self._idxs:
+                self._answers_machine[x][y] -= 1
 
     def _add_adj_cells(self, cell, unmarked, adj_set):
         x, y = cell[0], cell[1]
@@ -51,10 +77,57 @@ class KenKenPuzzle:
         else:
             print('%s is not an operator' % (op))
 
-    def uniquePuzzle(self):
+    # def dlxUniquePuzzle(self): #DLX Method
+    #     # construct DLX matrix
+    #     dlx_matrix = np.zeros(shape=(self._n ** 3, 3 * self._n + len(self._dict_rep))) # RxCy#z, Row-Col+Row-Num+Col-Num+Cage-Num
+
+    #     # Setting Constraints
+    #     for x in self._idxs:
+    #         for y in self._idxs:
+    #             for z in self._nums:
+    #                 dlx_matrix[(x * (self._n ** 2)) + (y * self._n) + z][(x * self._n) + y] # Row-Col Constraints
+    #                 dlx_matrix[(x * (self._n ** 2)) + (y * self._n) + z][(self._n ** 2) + (self._n * x) + z] # Row-Num Constraints
+    #                 dlx_matrix[(x * (self._n ** 2)) + (y * self._n) + z][(2 * (self._n ** 2)) + (self._n * y) + z] # Col-Num Constraints
+    #                 # Cage Constraints
+
+    #     opt_board = [[None for _ in self._idxs] for _ in self._idxs]
+    #     for cage_info in self._dict_rep.values():
+    #         cells, op_type, total = cage_info['cells'], cage_info['op_type'], cage_info['total']
+    #         options = set()
+
+    #         if op_type == '#':
+    #             options.add(total)
+    #         elif op_type == '+':
+    #             for i in self._nums:
+    #                 if i < total:
+    #                     options.add(i)
+    #         elif op_type == '-':
+    #             for i, j in itertools.permutations(self._nums, 2): # doesn't check (1,1), e.g.
+    #                 big, small = (i, j) if i > j else (j, i)
+    #                 if big - small == total:
+    #                     options.add(big)
+    #                     options.add(small)
+    #         elif op_type == '*':
+    #             for i in self._nums:
+    #                 if total % i == 0:
+    #                     options.add(i)
+    #         elif op_type == '/':
+    #             for i, j in itertools.permutations(self._nums, 2): # doesn't check (1,1), e.g.
+    #                 big, small = (i, j) if i > j else (j, i)
+    #                 if big / small == total:
+    #                     options.add(big)
+    #                     options.add(small)
+
+    #         for x, y in cells:
+    #             opt_board[x][y] = copy.copy(options)      
+
+    #     # run exhaustive DLX, if 2 answers found, return None
+    #     # reconstruct final answer from unique answer
+
+    def uniquePuzzle(self): # TODO: replace with DLX
         # construct initial possibilities, using each total and operator to eliminate outright
         opt_board = [[None for _ in self._idxs] for _ in self._idxs]
-        for cage_info in self._grid_rep['dict_rep'].values():
+        for cage_info in self._dict_rep.values():
             cells, op_type, total = cage_info['cells'], cage_info['op_type'], cage_info['total']
             options = set()
 
@@ -102,10 +175,10 @@ class KenKenPuzzle:
                     new_option[x][y] = val
 
                     # if the cage is completed, the total needs to be correct
-                    cage_id = self._grid_rep['cages'][x][y]
-                    op_type = self._grid_rep['ops'][x][y]
-                    total = self._grid_rep['totals'][x][y]
-                    cage_cells = self._grid_rep['dict_rep'][cage_id]['cells']
+                    cage_id = self._cages[x][y]
+                    op_type = self._operators[x][y]
+                    total = self._totals[x][y]
+                    cage_cells = self._dict_rep[cage_id]['cells']
                     complete_cage = True
                     nums = []
                     for i, j in cage_cells:
@@ -117,6 +190,7 @@ class KenKenPuzzle:
                     # eliminate row and column clashes
                     complete_sol = True
                     empty_set = False
+
                     for i in self._idxs:
                         if isinstance(new_option[i][y], set): 
                             complete_sol = False
@@ -146,13 +220,14 @@ class KenKenPuzzle:
         n = self._n
         idxs = self._idxs
 
-        # Generate Answers
+        # Generate Answers TODO: doesn't find all possible Latin Squares
         nums = [[(i + j) % n + 1 for i in idxs] for j in idxs]
         for _ in idxs: random.shuffle(nums)
         for i, j in itertools.permutations(idxs, 2):
             if random.random() > 0.5:
                 for r in idxs:
                     nums[r][i], nums[r][j] = nums[r][j], nums[r][i]
+        nums = np.array(nums)
 
         # Generate Cages, Operators, Totals
         cage_idx, data = 0, {}
@@ -209,15 +284,8 @@ class KenKenPuzzle:
             print("TOTALS")
             print(pd.DataFrame(totals), '\n')
 
-        self._grid_rep['size'] = self._n
-        self._grid_rep['nums'] = nums
-        self._grid_rep['cages'] = cages
-        self._grid_rep['ops'] = operators
-        self._grid_rep['totals'] = totals
-        self._grid_rep['dict_rep'] = data
-
-        return self._grid_rep
-
-puzzle = KenKenPuzzle(5)
-print('Number of attempts: ' + str(puzzle._attempts))
-print('done')
+        self._answers = np.array(nums, dtype=int)
+        self._cages = np.array(cages, dtype=int)
+        self._operators = np.array(operators, dtype=str)
+        self._totals = np.array(totals, dtype=int)
+        self._dict_rep = data
