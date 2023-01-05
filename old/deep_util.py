@@ -52,7 +52,7 @@ class KenKenDataset(torch.utils.data.Dataset):
                     torch.tensor(p._operators),
                     num_classes=5
                 ),
-                torch.tensor(p._totals) # these should be normalized against possible max
+                torch.tensor(p._totals)
             )).float()
             y = torch.nn.functional.one_hot(
                 torch.tensor(p._answers_machine),
