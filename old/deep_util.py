@@ -4,7 +4,7 @@ import os
 import numpy as np
 import torch
 
-import puzzle
+import old.puzzle as puzzle
 
 
 # TODO: Add transformation code
